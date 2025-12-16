@@ -1,0 +1,91 @@
+name: Empty GeoFiles
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/README.md"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          
+      - name: Tidy go modules
+        run: go mod tidy
+
+      - name: Create empty geosite source
+        run: |
+          mkdir -p input
+          echo "example.com" > input/Empty
+
+      - name: Build EmptyGeosite.dat
+        run: |
+          mkdir -p release
+          go run ./ \
+            --datapath=./input \
+            --outputdir=./release \
+            --exportlists=Empty \
+            --outputname=EmptyGeosite.dat
+
+      - name: Generate EmptyGeosite hash
+        run: |
+          sha256sum release/EmptyGeosite.dat > release/EmptyGeosite.dat.sha256sum
+
+      - name: Install geoip tool
+        run: |
+          go install github.com/Loyalsoldier/geoip@latest
+
+      - name: Add Go bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Create empty geoip source
+        run: |
+          mkdir -p source
+          echo "255.255.255.255/32" > source/empty.lst
+
+      - name: Build EmptyGeoip.dat
+        run: |
+          geoip convert
+
+      - name: Rename EmptyGeoip
+        run: |
+          mv release/geoip.dat release/EmptyGeoip.dat
+          sha256sum release/EmptyGeoip.dat > release/EmptyGeoip.dat.sha256sum
+
+      - name: Generate EmptyGeoip hash
+        run: |
+          sha256sum release/EmptyGeoip.dat > release/EmptyGeoip.dat.sha256sum
+
+      - name: Commit and push generated files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "Empty GeoFiles generator"
+          git config user.email "noreply@github.com"
+
+          git add release/EmptyGeosite.dat
+          git add release/EmptyGeosite.dat.sha256sum
+          git add release/EmptyGeoip.dat
+          git add release/EmptyGeoip.dat.sha256sum
+
+          git commit -m "Update Empty GeoFiles" || echo "No changes"
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
